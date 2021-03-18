@@ -10,6 +10,7 @@ import hmac
 import hashlib
 import base64
 
+from discord_webhook import DiscordWebhook, DiscordEmbed
 from urllib import parse
 from settings import log, req
 
@@ -21,6 +22,7 @@ class Notify(object):
     :param COOL_PUSH_MODE: Cool Push的推送方式.可选私聊(send)、群组(group)或者微信(wx),默认: send
     :param BARK_KEY: Bark的IP或设备码.例如: https://api.day.app/xxxxxx
     :param BARK_SOUND: Bark的推送铃声.在APP内查看铃声列表,默认: healthnotification
+    :param TG_BOT_API: Telegram Bot的api地址, 用于反向使用代理Telegram API地址.
     :param TG_BOT_TOKEN: Telegram Bot的token.向bot father申请bot时生成.
     :param TG_USER_ID: Telegram推送对象的用户ID.
     :param DD_BOT_TOKEN: 钉钉机器人WebHook地址中access_token后的字段.
@@ -66,6 +68,7 @@ class Notify(object):
     BARK_KEY = ''
     BARK_SOUND = 'healthnotification'
     # Telegram Bot
+    TG_BOT_API = 'api.telegram.org'
     TG_BOT_TOKEN = ''
     TG_USER_ID = ''
     # DingTalk Bot
@@ -85,6 +88,8 @@ class Notify(object):
     PUSH_PLUS_USER = ''
     # Custom Push Config
     PUSH_CONFIG = ''
+    # Discord Webhook
+    DISCORD_WEBHOOK = ''
 
     def pushTemplate(self, method, url, params=None, data=None, json=None, headers=None, **kwargs):
         name = kwargs.get('name')
@@ -187,7 +192,11 @@ class Notify(object):
         if TG_BOT_TOKEN and TG_USER_ID:
             token = 'token'
 
-        url = f'https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage'
+        TG_BOT_API = self.TG_BOT_API
+        if 'TG_BOT_API' in os.environ:
+            TG_BOT_API = os.environ['TG_BOT_API']
+
+        url = f'https://{TG_BOT_API}/bot{TG_BOT_TOKEN}/sendMessage'
         data = {
             'chat_id': TG_USER_ID,
             'text': f'{text} {status}\n\n{desp}',
@@ -379,6 +388,23 @@ class Notify(object):
         else:
             return self.pushTemplate('post', url, data=data, name=name, token='token', text=text, code=code)
 
+    def discordWebhook(self, text, status, desp):
+        DISCORD_WEBHOOK = self.DISCORD_WEBHOOK
+        if 'DISCORD_WEBHOOK' in os.environ:
+            DISCORD_WEBHOOK = os.environ['DISCORD_WEBHOOK']
+        
+        if not DISCORD_WEBHOOK:
+            return log.info(f'Discord 🚫')
+
+        webhook = DiscordWebhook(url=DISCORD_WEBHOOK)
+        embed = DiscordEmbed(title=f'{text} {status}', description=desp, color='03b2f8')
+        webhook.add_embed(embed)
+        response = webhook.execute()
+        if (response.status_code == 200):
+            log.info(f'Discord 🥳')
+        else:
+            log.error(f'Discord 😳\n{response}')
+
     def send(self, **kwargs):
         app = '原神签到小助手'
         status = kwargs.get('status', '')
@@ -401,6 +427,7 @@ class Notify(object):
         self.iGot(app, status, msg)
         self.pushPlus(app, status, msg)
         self.custPush(app, status, msg)
+        self.discordWebhook(app, status, msg)
 
 
 if __name__ == '__main__':
